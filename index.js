@@ -63,58 +63,42 @@ class Game {
   }
 
   ensureConnectivity() {
-    let reachable = this.floodFill(1, 1);
-    let totalEmpty = this.getAllEmptyCells();
+      let totalEmpty = this.getAllEmptyCells();
 
+      if (totalEmpty.length === 0) return; // карта полностью заполнена
+
+      let start = totalEmpty[0];
+      let reachable = this.floodFill(start.x, start.y);
+    
+    // Пока есть недостижимые клетки — соединяем
     while (reachable.length < totalEmpty.length) {
       let unreachableCells = totalEmpty.filter(c => !reachable.some(r => r.x === c.x && r.y === c.y));
 
       if (unreachableCells.length === 0) break;
 
-      // Берём любую изолированную клетку (например, ближнюю к основной зоне)
-      let isolatedCell = this.findNearestReachable(
-        // Находим точку основной зоны
-        reachable[0],
-        unreachableCells
-      );
+      // Берём изолированную клетку
+      let isolatedCell = this.findNearestReachable(reachable[0], unreachableCells);
 
+      // Находим ближайшую к ней клетку основной зоны
       let nearest = this.findNearestReachable(isolatedCell, reachable);
 
-      if (nearest === null) {
-        break;
+      if (!nearest) break;
+
+      // Строим зигзаг: сначала по X, потом по Y
+      let x1 = Math.min(isolatedCell.x, nearest.x);
+      let x2 = Math.max(isolatedCell.x, nearest.x);
+      let y1 = Math.min(isolatedCell.y, nearest.y);
+      let y2 = Math.max(isolatedCell.y, nearest.y);
+
+      for (let x = x1; x <= x2; x++) {
+        this.map[isolatedCell.y][x] = { type: ' ' };
+      }
+      for (let y = y1; y <= y2; y++) {
+        this.map[y][nearest.x] = { type: ' ' };
       }
 
-      // Прямой коридор
-      if (isolatedCell.x === nearest.x) {
-        let y1 = Math.min(isolatedCell.y, nearest.y);
-        let y2 = Math.max(isolatedCell.y, nearest.y);
-        for (let y = y1; y <= y2; y++) {
-          this.map[y][isolatedCell.x] = { type: ' ' };
-        }
-      } else if (isolatedCell.y === nearest.y) {
-        let x1 = Math.min(isolatedCell.x, nearest.x);
-        let x2 = Math.max(isolatedCell.x, nearest.x);
-        for (let x = x1; x <= x2; x++) {
-          this.map[isolatedCell.y][x] = { type: ' ' };
-        }
-      } else {
-        // Выбираем коридор по оси с наименьшим расстоянием
-        if (Math.abs(isolatedCell.x - nearest.x) < Math.abs(isolatedCell.y - nearest.y)) {
-          let x1 = Math.min(isolatedCell.x, nearest.x);
-          let x2 = Math.max(isolatedCell.x, nearest.x);
-          for (let x = x1; x <= x2; x++) {
-            this.map[isolatedCell.y][x] = { type: ' ' };
-          }
-        } else {
-          let y1 = Math.min(isolatedCell.y, nearest.y);
-          let y2 = Math.max(isolatedCell.y, nearest.y);
-          for (let y = y1; y <= y2; y++) {
-            this.map[y][isolatedCell.x] = { type: ' ' };
-          }
-        }
-      }
-
-      reachable = this.floodFill(1, 1);
+      // Пересчитываем достижимые клетки
+      reachable = this.floodFill(reachable[0].x, reachable[0].y);
     }
   }
 
@@ -134,6 +118,8 @@ class Game {
       stack.push({ x, y: y + 1 });
       stack.push({ x, y: y - 1 });
     }
+
+    console.log(visited);
     return visited;
   }
 
@@ -195,8 +181,8 @@ class Game {
     let empty = this.getAllEmptyCells().filter(
       c =>
         !(this.player && this.player.isOnCell(c.x, c.y)) &&
-        !this.enemies.some(e => e.isOnCell(c.x, c.y)) &&
-        !this.items.some(i => i.isOnCell(c.x, c.y))
+        !this.isItemOnCell(c.x, c.y) &&
+        !this.isEnemyOnCell(c.x, c.y)
     );
     return empty[Math.floor(Math.random() * empty.length)];
   }
@@ -263,13 +249,25 @@ class Game {
     this.enemies = this.enemies.filter(e => e.getHp() > 0);
   }
 
+  isEntityOnCell(x, y, entities) {
+    return entities.some(e => e.isOnCell(x, y));
+  }
+
+  isEnemyOnCell(x, y) {
+    return this.isEntityOnCell(x, y, this.enemies);
+  }
+
+  isItemOnCell(x, y) {
+    return this.isEntityOnCell(x, y, this.items);
+  }
+
   movePlayer(dx, dy) {
     const { x, y } = this.player.getCoords();
 
     let nx = x + dx;
     let ny = y + dy;
 
-    if (this.map[ny][nx].type !== 'W') {
+    if (this.map[ny][nx].type !== 'W' && !this.isEnemyOnCell(nx, ny)) {
       this.player.move(dx, dy);
     }
 
@@ -307,7 +305,7 @@ class Game {
           let nx = enemyCoords.x + d.dx;
           let ny = enemyCoords.y + d.dy;
 
-          if (this.map[ny][nx].type !== 'W' && !this.enemies.some(en => en.isOnCell(nx, ny))) {
+          if (this.map[ny][nx].type !== 'W' && !this.isEnemyOnCell(nx, ny)) {
             e.move(d.dx, d.dy);
           }
         }
